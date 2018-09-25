@@ -1,5 +1,6 @@
 package com.mark.kafka.tutorial3;
 
+import com.google.gson.JsonParser;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -83,16 +84,25 @@ public class ElasticSearchConsumer {
 
             for (ConsumerRecord<String, String> record : records)
             {
-                // where we insert data into elasticsearch
+                // 2 strategies
+                // kafka generic ID incase we cant find an id to use
+                // String id = record.topic() + "_" + record.partition() + "_" + record.offset();
+
+                // but tweets have an id field we can use, so use it when we send to elastic search.
+                // the reason we want to use ids is so that we dont insert duplicate records into elastic search
+                // instead we will do upserts
+
+                // twitter feed specifid id
+                String id = extractIdFromTweet(record.value());
 
                 IndexRequest indexRequest = new IndexRequest(
                         "twitter",
-                        "tweets"
+                        "tweets",
+                        id // this is to make our consumer idempotent
                 ).source(record.value(), XContentType.JSON);
 
                 IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
-                String id = indexResponse.getId();
-                logger.info(id);
+                logger.info(indexResponse.getId());
                 try {
                     Thread.sleep(1000);  // introduce a small delay so we can see them better in the console
                     // remove this in prod
@@ -105,5 +115,11 @@ public class ElasticSearchConsumer {
 
         // close the client gracefully
         // client.close();
+    }
+
+    private static String extractIdFromTweet(String tweet) {
+        JsonParser jsonParser = new JsonParser();
+
+        return jsonParser.parse(tweet).getAsJsonObject().get("id_str").getAsString();
     }
 }
